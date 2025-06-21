@@ -1,0 +1,52 @@
+- name: Установка зависимостей
+  apt:
+    name: ['apt-transport-https', 'ca-certificates', 'curl', 'gnupg', 'lsb-release']
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Создание каталога для ключей apt
+  file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: '0755'
+
+- name: Скачивание и добавление GPG-ключа Docker
+  ansible.builtin.shell:
+    cmd: curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+    creates: /etc/apt/keyrings/docker.gpg
+  become: true
+  register: gpg_download
+  retries: 3
+  delay: 5
+  until: gpg_download is success
+
+- name: Установка прав доступа на ключ
+  file:
+    path: /etc/apt/keyrings/docker.gpg
+    mode: '0644'
+
+- name: Добавление репозитория Docker
+  apt_repository:
+    repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian {{ ansible_distribution_release }} stable"
+    filename: docker
+    state: present
+    update_cache: true
+
+- name: Установка Docker и Compose
+  apt:
+    name: ['docker-ce', 'docker-ce-cli', 'containerd.io', 'docker-compose-plugin']
+    state: present
+    update_cache: true
+
+- name: Включение и запуск Docker
+  systemd:
+    name: docker
+    enabled: true
+    state: started
+
+- name: Добавление пользователя в группу docker
+  user:
+    name: "{{ lookup('env', 'USER') }}"
+    groups: docker
+    append: true

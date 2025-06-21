@@ -1,0 +1,5 @@
+- hosts: nextcloud
+  become: true
+  roles:
+    - docker
+    - nextcloud

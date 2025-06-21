@@ -1,0 +1,23 @@
+nextcloud на двух машинах, один основной второй для бекапов
+
+Для Замены:
+
+inventory - ip адреса и ansible_user
+
+nextcloud:
+
+    Создание скрипта
+
+main -  dest         Директория на основном сервере где будет лежать скрипт
+        owner        Имя юзера
+        group        Имя юзера
+        REMOTE_USER  Имя юзера
+        REMOTE_HOST  ip бепак сервера
+        REMOTE_DIR   Путь до директории на бекап сервере
+
+    Crontab
+
+        minute: "30"
+        hour: "3"       время выставить по желанию
+        job: "/home/backupuser/backup_nextcloud.sh" Директорию сменить
+        user: backupuser имя юзера поставить своё

@@ -1,0 +1,108 @@
+- name: Установка Certbot для получения SSL-сертификата
+  ansible.builtin.apt:
+    name:
+      - certbot
+      - python3-certbot-apache
+    state: present
+    update_cache: yes
+  when: ansible_os_family == "Debian"
+
+- name: Открыть порт 80 для проверки Let's Encrypt
+  ansible.builtin.ufw:
+    rule: allow
+    port: 80
+    proto: tcp
+    state: enabled
+
+- name: Открыть порт 443 для HTTPS
+  ansible.builtin.ufw:
+    rule: allow
+    port: 443
+    proto: tcp
+    state: enabled
+
+- name: Получить SSL-сертификат от Let's Encrypt
+  ansible.builtin.command:
+    cmd: certbot certonly --standalone --non-interactive --agree-tos --email admin@itlimon.site -d itlimon.site
+    creates: /etc/letsencrypt/live/itlimon.site/fullchain.pem
+  register: certbot_result
+  changed_when: certbot_result.rc == 0
+
+- name: Создать директорию для сертификатов в контейнере
+  ansible.builtin.command:
+    cmd: docker exec nextcloud mkdir -p /etc/ssl/nextcloud
+  register: mkdir_result
+  changed_when: mkdir_result.rc == 0
+
+- name: Скопировать сертификаты в контейнер
+  ansible.builtin.command:
+    cmd: docker cp /etc/letsencrypt/live/itlimon.site/{{ item }} nextcloud:/etc/ssl/nextcloud/{{ item }}
+  loop:
+    - fullchain.pem
+    - privkey.pem
+  register: copy_result
+  changed_when: copy_result.rc == 0
+
+- name: Настроить Apache в контейнере для использования SSL
+  ansible.builtin.command:
+    cmd: docker exec nextcloud bash -c "a2enmod ssl && a2ensite default-ssl"
+  register: apache_ssl_result
+  changed_when: apache_ssl_result.rc == 0
+
+- name: Создать конфигурацию SSL для Apache в контейнере
+  ansible.builtin.copy:
+    dest: /tmp/nextcloud_ssl.conf
+    content: |
+      <VirtualHost *:443>
+          ServerName itlimon.site
+          DocumentRoot /var/www/html
+          SSLEngine on
+          SSLCertificateFile /etc/ssl/nextcloud/fullchain.pem
+          SSLCertificateKeyFile /etc/ssl/nextcloud/privkey.pem
+          <Directory /var/www/html>
+              Options +FollowSymlinks
+              AllowOverride All
+              Require all granted
+          </Directory>
+          ErrorLog /var/log/apache2/error.log
+          CustomLog /var/log/apache2/access.log combined
+      </VirtualHost>
+    mode: '0644'
+  register: ssl_conf_result
+  changed_when: ssl_conf_result.changed
+
+- name: Скопировать конфигурацию SSL в контейнер
+  ansible.builtin.command:
+    cmd: docker cp /tmp/nextcloud_ssl.conf nextcloud:/etc/apache2/sites-available/nextcloud-ssl.conf
+  when: ssl_conf_result.changed
+
+- name: Активировать конфигурацию SSL в Apache
+  ansible.builtin.command:
+    cmd: docker exec nextcloud a2ensite nextcloud-ssl
+  register: a2ensite_result
+  changed_when: a2ensite_result.rc == 0
+
+- name: Обновить контейнер Nextcloud для использования HTTPS
+  community.docker.docker_container:
+    name: nextcloud
+    image: nextcloud
+    state: started
+    restart_policy: always
+    published_ports:
+      - "8080:80"
+      - "8443:443"
+    volumes:
+      - nextcloud_data:/var/www/html
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    restart: yes
+  register: container_result
+  changed_when: container_result.changed
+
+- name: Настроить автопродление сертификата через cron
+  ansible.builtin.cron:
+    name: "Renew Let's Encrypt certificate"
+    user: root
+    minute: "0"
+    hour: "3"
+    day: "*/2"  # Запуск каждые 2 дня
+    job: "certbot renew --quiet && docker restart nextcloud"
