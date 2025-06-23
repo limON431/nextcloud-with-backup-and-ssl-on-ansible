@@ -7,13 +7,10 @@ inventory - ip адреса и ansible_user
 nextcloud:
 
     Создание скрипта
-
-        dest         Директория на основном сервере где будет лежать скрипт
-        owner        Имя юзера
-        group        Имя юзера
-        REMOTE_USER  Имя юзера
-        REMOTE_HOST  ip бепак сервера
-        REMOTE_DIR   Путь до директории на бекап сервере
+        
+         REMOTE_USER  Имя юзера
+         REMOTE_HOST  ip бекап сервера
+         REMOTE_DIR   Путь до директории на бекап сервере
 
     Crontab
 
